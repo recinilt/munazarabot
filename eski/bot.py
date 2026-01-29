@@ -87,15 +87,6 @@ sessions: Dict[int, MunazaraSession] = {}
 SETUP_QUESTIONS = [
     """🎭 **Münazara GPT'ye Hoş Geldiniz!**
 
-📋 **Komutlar:**
-• `/munazara` - Yeni münazara başlat
-• `/bitir` - Münazarayı bitir + özet
-• `/durum` - Mevcut oturum durumu
-• `/sifirla` - Oturumu sıfırla
-• `@botismi [mesaj]` - Tartışma sırasında saldırı tetikle
-
----
-
 Başlamadan önce ayarları yapalım.
 
 **1️⃣ Siz kimsiniz?** (Savunacağınız pozisyon)
@@ -112,7 +103,6 @@ _Cevabınızı yazın..._""",
 
     """**3️⃣ Sertlik seviyesi:**
 
-⚪ Çok Hafif - İlkokul seviyesi, doğruysa kabul eder
 🟢 Hafif - Nazik, soru ağırlıklı
 🟡 Orta - Direkt, iddia+soru dengeli  
 🔴 Sert - Keskin, kaçışa sıfır tolerans
@@ -177,30 +167,8 @@ C) 5 tur geçti → "Kilitlendik. Askıya alıp geçiyorum."
 | "X öyle demiş" | "O beni bağlamaz. SEN savunuyorsun. SEN açıkla." |
 | Geçiştirme | "Hayır. Cevapla veya 'haklısın' de." |
 
-## TUTARSIZLIK TESPİTİ (ÇOK ÖNEMLİ!)
-Ana görevin kullanıcının KENDİ İÇİNDE tutarlı olup olmadığını kontrol etmek!
-
-**Yapman gerekenler:**
-1. Kullanıcının önceki cevaplarını HATIRLA
-2. Yeni cevaplarla önceki cevapları KARŞILAŞTIR
-3. Çelişki varsa HEMEN belirt
-
-**Tutarsızlık bulduğunda şu formatı kullan:**
-- "Dur bir dakika. Az önce [X] dedin. Ama şimdi [Y] diyorsun. Bu ikisi çelişiyor."
-- "Ama daha önce şöyle demiştin: [alıntı]. Şimdi tam tersini söylüyorsun."
-- "Kendinle çelişiyorsun. [1. iddia] ile [2. iddia] aynı anda doğru olamaz."
-
-**Mantık hatalarını yakala:**
-- Döngüsel mantık (A doğru çünkü B, B doğru çünkü A)
-- Yanlış genelleme (Bir örnek = tüm durum)
-- Sonuç zıplaması (A'dan Z'ye mantık silsilesi atlaması)
-- Çifte standart (Kendine bir kural, başkasına başka kural)
-
-**Amaç:** Kullanıcının kendini geliştirmesi, kendi içinde tutarlı olması için yardım et.
-
 ## SERTLİK: {session.severity}
-{"⚪Çok Hafif: İlkokul-ortaokul seviyesi. Genel kabul gören doğru bilgilere 'Haklısın, bu doğru.' de ve geç. Örneğin 'üçgenin iç açıları toplamı 180 derece' gibi temel bilgilere itiraz etme. Sadece açıkça yanlış veya mantıksız şeylere karşı çık. Derin bilimsel/felsefi detaylara girme (uzay-zaman eğriliği, kuantum mekaniği gibi). Nazik ve öğretici ol. AMA tutarsızlık tespitini yine de yap - nazikçe 'Bir dakika, az önce şöyle demiştin ama şimdi farklı söylüyorsun, hangisi doğru?' şeklinde sor." if "Çok Hafif" in session.severity else ""}
-{"🟢Hafif: Nazik dil, soru ağırlıklı" if "Hafif" in session.severity and "Çok Hafif" not in session.severity else ""}
+{"🟢Hafif: Nazik dil, soru ağırlıklı" if "Hafif" in session.severity else ""}
 {"🟡Orta: Direkt dil, iddia+soru dengeli" if "Orta" in session.severity else ""}
 {"🔴Sert: Keskin dil, kaçışa sıfır tolerans" if "Sert" in session.severity else ""}
 {"⚫Vahşi: Acımasız, reductio ad absurdum, merhamet yok" if "Vahşi" in session.severity else ""}
@@ -304,12 +272,12 @@ async def ask_gemini(system_prompt: str, user_message: str, chat_history: list) 
         
         # API çağrısı
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash-preview-05-20",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 temperature=0.7,
-                max_output_tokens=1024
+                max_output_tokens=500
             )
         )
         
@@ -366,9 +334,9 @@ async def ask_openrouter(system_prompt: str, user_message: str, chat_history: li
         messages.append({"role": "user", "content": user_message})
         
         response = openrouter_client.chat.completions.create(
-            model="deepseek/deepseek-chat:free",
+            model="deepseek/deepseek-r1-0528:free",
             messages=messages,
-            max_tokens=1024,
+            max_tokens=500,
             temperature=0.7
         )
         
@@ -425,7 +393,7 @@ Türkçe yaz, kısa tut."""
     try:
         if gemini_client and rate_tracker.can_use_gemini():
             response = gemini_client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash-preview-05-20",
                 contents=research_prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.3,
@@ -623,9 +591,7 @@ async def handle_setup(update: Update, context: ContextTypes.DEFAULT_TYPE, sessi
     elif step == 2:
         # Sertlik seviyesi
         text_lower = message_text.lower()
-        if "çok hafif" in text_lower or "⚪" in message_text:
-            session.severity = "⚪Çok Hafif"
-        elif "hafif" in text_lower or "🟢" in message_text:
+        if "hafif" in text_lower or "🟢" in message_text:
             session.severity = "🟢Hafif"
         elif "vahşi" in text_lower or "⚫" in message_text:
             session.severity = "⚫Vahşi"

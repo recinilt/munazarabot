@@ -1,0 +1,15 @@
+# Telegram
+python-telegram-bot>=21.0
+
+# Google GenAI (YENİ SDK - google-generativeai DEĞİL!)
+google-genai>=1.0.0
+
+# OpenRouter (OpenAI uyumlu)
+openai>=1.0.0
+
+# Ortam değişkenleri
+python-dotenv>=1.0.0
+
+# Koyeb Health Check için
+Flask==3.0.0
+gunicorn==21.2.0
