@@ -324,12 +324,7 @@ def setup_gemini():
 
 async def ask_gemini(system_prompt: str, user_message: str, chat_history: list) -> Tuple[Optional[str], bool]:
     """Gemini'ye sor (yeni SDK)"""
-    if not gemini_client:
-        logger.warning("Gemini client yok!")
-        return None, False
-    
-    if not rate_tracker.can_use_gemini():
-        logger.warning(f"Gemini rate limit! (min: {rate_tracker.requests_this_minute}, day: {rate_tracker.requests_today}, blocked: {rate_tracker.blocked_until})")
+    if not gemini_client or not rate_tracker.can_use_gemini():
         return None, False
     
     try:
@@ -361,7 +356,6 @@ async def ask_gemini(system_prompt: str, user_message: str, chat_history: list) 
         )
         
         rate_tracker.record_request()
-        logger.info("Gemini başarılı!")
         return response.text, True
     
     except Exception as e:
@@ -400,7 +394,6 @@ def setup_openrouter():
 async def ask_openrouter(system_prompt: str, user_message: str, chat_history: list) -> Tuple[Optional[str], bool]:
     """OpenRouter (DeepSeek R1) ile sor"""
     if not openrouter_client:
-        logger.warning("OpenRouter client yok!")
         return None, False
     
     try:
@@ -414,7 +407,6 @@ async def ask_openrouter(system_prompt: str, user_message: str, chat_history: li
         
         messages.append({"role": "user", "content": user_message})
         
-        logger.info("OpenRouter API çağrılıyor...")
         response = openrouter_client.chat.completions.create(
             model="meta-llama/llama-3.3-70b-instruct:free",
             messages=messages,
@@ -422,7 +414,6 @@ async def ask_openrouter(system_prompt: str, user_message: str, chat_history: li
             temperature=0.7
         )
         
-        logger.info("OpenRouter başarılı!")
         return response.choices[0].message.content, True
     
     except Exception as e:
@@ -439,18 +430,16 @@ async def get_ai_response(session: MunazaraSession, user_message: str) -> Tuple[
     system_prompt = get_system_prompt(session)
     
     # 1. Gemini dene
-    logger.info(f"Gemini deneniyor... (can_use: {rate_tracker.can_use_gemini()}, client: {gemini_client is not None})")
     response, success = await ask_gemini(system_prompt, user_message, session.chat_history)
     if success and response:
         return response, "Gemini"
     
     # 2. OpenRouter dene
-    logger.info(f"Gemini başarısız, OpenRouter'a geçiliyor... (client: {openrouter_client is not None})")
+    logger.info("Gemini başarısız, OpenRouter'a geçiliyor...")
     response, success = await ask_openrouter(system_prompt, user_message, session.chat_history)
     if success and response:
         return response, "DeepSeek"
     
-    logger.error("Tüm API'ler başarısız!")
     return "⚠️ Şu anda yanıt veremiyorum. Lütfen biraz sonra tekrar deneyin.", "Yok"
 
 # ============================================
@@ -1208,23 +1197,21 @@ async def handle_discussion(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     # AI cevabı al
     response, model_used = await get_ai_response(session, message_text)
     
-    # Sadece başarılı yanıtlarda işle
-    if model_used != "Yok":
-        # Geçmişe bot cevabını ekle
-        session.chat_history.append({"role": "assistant", "content": response})
-        
-        # Tur sayacı
-        session.turn_count += 1
-        
-        # Konu işlendi olarak işaretle (eğer konu seçildiyse)
-        for topic in session.attack_topics:
-            if topic.lower() in message_text.lower() and topic not in session.completed_topics:
-                session.completed_topics.append(topic)
-                break
-        
-        # 5 tur kontrolü
-        if session.turn_count >= 5:
-            response += "\n\n⚠️ _5 tur oldu. Kilitlendik mi? 'geç' yazabilirsiniz._"
+    # Geçmişe bot cevabını ekle
+    session.chat_history.append({"role": "assistant", "content": response})
+    
+    # Tur sayacı
+    session.turn_count += 1
+    
+    # Konu işlendi olarak işaretle (eğer konu seçildiyse)
+    for topic in session.attack_topics:
+        if topic.lower() in message_text.lower() and topic not in session.completed_topics:
+            session.completed_topics.append(topic)
+            break
+    
+    # 5 tur kontrolü
+    if session.turn_count >= 5:
+        response += "\n\n⚠️ _5 tur oldu. Kilitlendik mi? 'geç' yazabilirsiniz._"
     
     # Cevabı gönder
     footer = f"\n\n_[{model_used}]_"
