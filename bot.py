@@ -366,7 +366,7 @@ async def ask_openrouter(system_prompt: str, user_message: str, chat_history: li
         messages.append({"role": "user", "content": user_message})
         
         response = openrouter_client.chat.completions.create(
-            model="deepseek/deepseek-chat:free",
+            model="meta-llama/llama-3.3-70b-instruct:free",
             messages=messages,
             max_tokens=1024,
             temperature=0.7
