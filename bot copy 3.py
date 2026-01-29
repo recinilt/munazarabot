@@ -114,7 +114,6 @@ COMMANDS_HELP = """📋 **Komut Listesi**
 
 **Genel:**
 /start - Bot hakkında bilgi
-/help - Bu komut listesi
 
 **Tartışma sırasında:**
 `@bot konu 3` - Belirli konuya geç
@@ -449,31 +448,28 @@ async def get_ai_response(session: MunazaraSession, user_message: str) -> Tuple[
 async def do_research(session: MunazaraSession) -> Tuple[str, List[str]]:
     """Pozisyonlar hakkında web araştırması yap ve konu başlıkları döndür"""
     
-    research_prompt = f"""Sen bir münazara uzmanısın. İki pozisyon arasındaki TEMEL ANLAŞMAZLIK NOKTALARINI belirle.
+    research_prompt = f"""Şu iki pozisyon arasındaki temel farkları ve tartışma noktalarını analiz et:
+    
+Pozisyon 1 (Savunan): {session.user_position}
+Pozisyon 2 (Saldıran): {session.bot_position}
+Konu: {session.topic}
 
-SAVUNAN: {session.user_position}
-SALDIRAN: {session.bot_position}  
-KONU: {session.topic}
+GÖREV: Saldırı için kullanılabilecek KONU BAŞLIKLARINI listele.
 
-GÖREV: Saldıran tarafın savunanı zora sokabileceği 5-8 TARTIŞMA KONUSU üret.
+ÖNEMLİ FORMAT:
+- Her satıra bir konu yaz
+- Sadece kısa başlık (açıklama YAZMA)
+- En az 5, en fazla 10 konu
+- Her konu "KONU:" ile başlasın
 
-KURALLAR:
-1. Her konu spesifik ve somut olmalı (genel değil)
-2. Her konu bir SORU veya İDDİA içermeli
-3. Konular saldıran tarafın bakış açısından olmalı
-4. Sadece başlık yaz, açıklama YAZMA
-5. Her satır "KONU:" ile başlamalı
+Örnek çıktı:
+KONU: Varlık birliği ve Allah'ın aşkınlığı
+KONU: Şirk ve tevhid çelişkisi
+KONU: Kuran ayetlerinin zahiri yorumu
+KONU: İbn Arabi'nin tartışmalı ifadeleri
+KONU: Fena fillah kavramı
 
-ÖRNEK ({session.bot_position} için):
-KONU: Temel kavramın tanımı ve çelişkileri
-KONU: Kaynak otoritesi ve delil problemi
-KONU: Mantıksal tutarlılık sorunu
-KONU: Tarihsel köken ve etkilenme iddiası
-KONU: Pratik sonuçlar ve çelişkiler
-KONU: Rakip görüşlerle karşılaştırma
-KONU: İç tutarsızlık iddiaları
-
-ŞİMDİ {session.user_position} vs {session.bot_position} ({session.topic}) için spesifik konuları yaz:"""
+Şimdi {session.user_position} vs {session.bot_position} için konuları yaz:"""
 
     topics = []
     research_text = ""
@@ -512,15 +508,14 @@ KONU: İç tutarsızlık iddiaları
     except Exception as e:
         logger.warning(f"Araştırma hatası: {e}")
     
-    # Fallback konular - daha anlamlı
+    # Fallback konular
     if not topics:
         topics = [
-            f"{session.user_position} görüşünün temel tanımı ve sınırları",
-            f"{session.bot_position} açısından temel itiraz noktası",
-            "Kaynak ve delil otoritesi meselesi",
-            "Mantıksal tutarlılık ve iç çelişkiler",
-            "Tarihsel köken ve felsefi etkilenmeler",
-            "Pratik sonuçlar ve günlük hayata yansıması"
+            f"{session.user_position} temel iddiası",
+            f"{session.bot_position} karşı argümanı",
+            "Mantıksal tutarlılık",
+            "Kaynak ve deliller",
+            "Pratik sonuçlar"
         ]
         research_text = "Araştırma yapılamadı, genel konularla devam ediliyor."
     
@@ -784,10 +779,6 @@ Bu bot seninle münazara yapar. Sen bir taraf, bot karşı taraf.
     
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/help komutu - Komut listesi"""
-    await update.message.reply_text(COMMANDS_HELP, parse_mode="Markdown")
-
 async def munazara_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/munazara - Yeni münazara başlat"""
     chat_id = update.effective_chat.id
@@ -942,11 +933,9 @@ FORMAT:
     
     if not topics:
         topics = [
-            f"{session.user_position} - alternatif bakış açısı",
-            f"{session.bot_position} - farklı bir eleştiri noktası",
-            "Metodolojik itirazlar",
-            "Epistemolojik sorunlar",
-            "Tarihsel karşılaştırma"
+            "Yeni perspektif 1",
+            "Yeni perspektif 2",
+            "Yeni perspektif 3"
         ]
     
     return topics
@@ -985,12 +974,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message_text = message_text.replace(f"@{BOT_USERNAME}", "").strip()
             message_text = message_text.replace(f"@{BOT_USERNAME.lower()}", "").strip()
     
+    # Boş mesaj veya "?" kontrolü - komut listesi göster
+    clean_text = message_text.strip()
+    if clean_text == "" or clean_text == "?":
+        await update.message.reply_text(
+            COMMANDS_HELP,
+            parse_mode="Markdown",
+            reply_to_message_id=update.message.message_id
+        )
+        return
+    
     # IDLE durumunda
     if session.state == "IDLE":
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             await update.message.reply_text(
                 "❌ Aktif münazara yok. /munazara ile başlatın.\n\n"
-                "_Komut listesi için /help yazın._",
+                "_Komut listesi için boş mesaj veya `?` gönderin._",
                 reply_to_message_id=update.message.message_id,
                 parse_mode="Markdown"
             )
@@ -1284,7 +1283,6 @@ def main():
     
     # Handler'ları ekle
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("munazara", munazara_command))
     app.add_handler(CommandHandler("bitir", bitir_command))
     app.add_handler(CommandHandler("durum", durum_command))
