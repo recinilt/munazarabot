@@ -6,7 +6,9 @@ Münazara GPT v2 - Grup Münazara Botu
 - Grup desteği (@mention ile çalışır)
 - Instructions v6.1 akışı
 """
-
+import threading
+import time
+import urllib.request
 import os
 import logging
 import asyncio
@@ -797,8 +799,23 @@ def main():
     logger.info("🎭 Münazara GPT v2 başlatılıyor...")
     logger.info(f"Gemini: {'✅' if gemini_client else '❌'}")
     logger.info(f"OpenRouter: {'✅' if openrouter_client else '❌'}")
-    
+
+    if os.environ.get("KOYEB_PUBLIC_DOMAIN"):
+        ping_thread = threading.Thread(target=keep_alive, daemon=True)
+        ping_thread.start()
+        logger.info("Keep-alive thread başlatıldı")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
+def keep_alive():
+    """Koyeb'in uyumasını engelle"""
+    url = "https://" + os.environ.get("KOYEB_PUBLIC_DOMAIN", "localhost:8000") + "/health"
+    while True:
+        try:
+            urllib.request.urlopen(url, timeout=10)
+            logger.info("Keep-alive ping gönderildi")
+        except:
+            pass
+        time.sleep(240)  # 4 dakika
+        
 if __name__ == "__main__":
     main()
