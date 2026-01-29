@@ -6,7 +6,6 @@ Münazara GPT v2 - Grup Münazara Botu
 - Grup desteği (@mention ile çalışır)
 - Instructions v6.1 akışı
 - Nöbet Devri Bildirimi (JobQueue ile günlük 08:00)
-- Konu başlıkları sistemi
 """
 import threading
 import time
@@ -88,38 +87,9 @@ class MunazaraSession:
     
     # Web araştırma sonucu (kullanıcıya gösterilmez)
     research_notes: str = ""
-    
-    # Saldırı konuları listesi
-    attack_topics: list = field(default_factory=list)
-    completed_topics: list = field(default_factory=list)
 
 # Grup oturumları: {chat_id: MunazaraSession}
 sessions: Dict[int, MunazaraSession] = {}
-
-# ============================================
-# KOMUT LİSTESİ
-# ============================================
-
-COMMANDS_HELP = """📋 **Komut Listesi**
-
-**Münazara:**
-/munazara - Yeni münazara başlat
-/bitir - Münazarayı bitir + özet al
-/durum - Mevcut oturum durumu
-/sifirla - Oturumu sıfırla
-
-**Nöbet Devri:**
-/nobetnarkotikdevri - Nöbet listesi kaydet (liste ile birlikte)
-/nobetdurum - Bugünkü/yarınki nöbetçi
-
-**Genel:**
-/start - Bot hakkında bilgi
-
-**Tartışma sırasında:**
-`@bot konu 3` - Belirli konuya geç
-`@bot [iddia]` - Serbest iddia söyle
-`haklısın` - Noktayı geç
-`geç` - Askıya al"""
 
 # ============================================
 # SETUP SORULARI
@@ -445,35 +415,24 @@ async def get_ai_response(session: MunazaraSession, user_message: str) -> Tuple[
 # WEB ARAŞTIRMASI (Ayarlar sonrası)
 # ============================================
 
-async def do_research(session: MunazaraSession) -> Tuple[str, List[str]]:
-    """Pozisyonlar hakkında web araştırması yap ve konu başlıkları döndür"""
+async def do_research(session: MunazaraSession) -> str:
+    """Pozisyonlar hakkında web araştırması yap"""
     
-    research_prompt = f"""Şu iki pozisyon arasındaki temel farkları ve tartışma noktalarını analiz et:
+    research_prompt = f"""Şu iki pozisyon arasındaki temel farkları ve tartışma noktalarını kısaca özetle:
     
-Pozisyon 1 (Savunan): {session.user_position}
-Pozisyon 2 (Saldıran): {session.bot_position}
+Pozisyon 1: {session.user_position}
+Pozisyon 2: {session.bot_position}
 Konu: {session.topic}
 
-GÖREV: Saldırı için kullanılabilecek KONU BAŞLIKLARINI listele.
+Şunları listele (kısa):
+1. Pozisyon 1'in temel inançları (3 madde)
+2. Pozisyon 2'nin temel inançları (3 madde)  
+3. Ana çelişki/tartışma noktaları (3 madde)
+4. Saldırı için kullanılabilecek zayıf noktalar (3 madde)
 
-ÖNEMLİ FORMAT:
-- Her satıra bir konu yaz
-- Sadece kısa başlık (açıklama YAZMA)
-- En az 5, en fazla 10 konu
-- Her konu "KONU:" ile başlasın
+Türkçe yaz, kısa tut."""
 
-Örnek çıktı:
-KONU: Varlık birliği ve Allah'ın aşkınlığı
-KONU: Şirk ve tevhid çelişkisi
-KONU: Kuran ayetlerinin zahiri yorumu
-KONU: İbn Arabi'nin tartışmalı ifadeleri
-KONU: Fena fillah kavramı
-
-Şimdi {session.user_position} vs {session.bot_position} için konuları yaz:"""
-
-    topics = []
-    research_text = ""
-    
+    # Basit araştırma (system prompt olmadan)
     try:
         if gemini_client and rate_tracker.can_use_gemini():
             response = gemini_client.models.generate_content(
@@ -485,41 +444,11 @@ KONU: Fena fillah kavramı
                 )
             )
             rate_tracker.record_request()
-            research_text = response.text
-            
-            # Konuları parse et
-            for line in research_text.split('\n'):
-                line = line.strip()
-                if line.startswith('KONU:'):
-                    topic = line.replace('KONU:', '').strip()
-                    if topic:
-                        topics.append(topic)
-            
-            # Eğer parse edilemezse, satır satır dene
-            if not topics:
-                for line in research_text.split('\n'):
-                    line = line.strip()
-                    if line and not line.startswith('#') and len(line) > 5 and len(line) < 100:
-                        # Numaraları temizle
-                        cleaned = re.sub(r'^[\d\.\-\*\)]+\s*', '', line)
-                        if cleaned:
-                            topics.append(cleaned)
-    
+            return response.text
     except Exception as e:
         logger.warning(f"Araştırma hatası: {e}")
     
-    # Fallback konular
-    if not topics:
-        topics = [
-            f"{session.user_position} temel iddiası",
-            f"{session.bot_position} karşı argümanı",
-            "Mantıksal tutarlılık",
-            "Kaynak ve deliller",
-            "Pratik sonuçlar"
-        ]
-        research_text = "Araştırma yapılamadı, genel konularla devam ediliyor."
-    
-    return research_text, topics
+    return "Araştırma yapılamadı, genel bilgilerle devam ediliyor."
 
 # ============================================
 # NÖBETÇİ LİSTESİ FONKSİYONLARI
@@ -820,7 +749,6 @@ Konu: {session.topic}
 ⏸️ Askıdaki noktalar: {len(session.points_pending)}
 {chr(10).join(['• ' + p for p in session.points_pending]) if session.points_pending else '• Yok'}
 
-**İşlenen konular:** {len(session.completed_topics)}
 **Toplam tur:** {session.turn_count}
 
 _Münazara sonlandırıldı. Yeni münazara için /munazara yazın._"""
@@ -841,9 +769,6 @@ async def durum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     gemini_status = "✅" if rate_tracker.can_use_gemini() else "⏳ Limit"
     
-    # Kalan konuları hesapla
-    remaining_topics = [t for t in session.attack_topics if t not in session.completed_topics]
-    
     msg = f"""📊 **Oturum Durumu**
 
 **Durum:** {session.state}
@@ -858,11 +783,6 @@ async def durum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Kaybedilen: {len(session.points_lost)}
 • Askıda: {len(session.points_pending)}
 
-**Konular:**
-• Toplam: {len(session.attack_topics)}
-• İşlenen: {len(session.completed_topics)}
-• Kalan: {len(remaining_topics)}
-
 **API Durumu:**
 Gemini: {gemini_status} ({rate_tracker.requests_today}/250 günlük)
 OpenRouter: ✅ Yedek hazır"""
@@ -874,71 +794,6 @@ async def sifirla_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     sessions[chat_id] = MunazaraSession()
     await update.message.reply_text("🔄 Oturum sıfırlandı. /munazara ile yeniden başlayabilirsiniz.")
-
-def format_topics_list(topics: List[str], completed: List[str] = None) -> str:
-    """Konu listesini formatla"""
-    if completed is None:
-        completed = []
-    
-    lines = []
-    for i, topic in enumerate(topics, 1):
-        if topic in completed:
-            lines.append(f"~~Konu {i}: {topic}~~ ✓")
-        else:
-            lines.append(f"Konu {i}: {topic}")
-    
-    return "\n".join(lines)
-
-async def generate_new_topics(session: MunazaraSession) -> List[str]:
-    """Tüm konular bitince yeni liste oluştur"""
-    research_prompt = f"""Şu iki pozisyon arasında YENİ tartışma konuları bul:
-
-Pozisyon 1 (Savunan): {session.user_position}
-Pozisyon 2 (Saldıran): {session.bot_position}
-Konu: {session.topic}
-
-ÖNCEKİ KONULAR (bunları TEKRARLAMA):
-{chr(10).join(session.completed_topics)}
-
-GÖREV: Farklı, yeni saldırı konuları yaz.
-
-FORMAT:
-- Her satıra bir konu
-- Sadece kısa başlık
-- En az 5 konu
-- Her konu "KONU:" ile başlasın"""
-
-    topics = []
-    
-    try:
-        if gemini_client and rate_tracker.can_use_gemini():
-            response = gemini_client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=research_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.5,
-                    max_output_tokens=500
-                )
-            )
-            rate_tracker.record_request()
-            
-            for line in response.text.split('\n'):
-                line = line.strip()
-                if line.startswith('KONU:'):
-                    topic = line.replace('KONU:', '').strip()
-                    if topic and topic not in session.completed_topics:
-                        topics.append(topic)
-    except Exception as e:
-        logger.warning(f"Yeni konu üretme hatası: {e}")
-    
-    if not topics:
-        topics = [
-            "Yeni perspektif 1",
-            "Yeni perspektif 2",
-            "Yeni perspektif 3"
-        ]
-    
-    return topics
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Mesaj işleyici"""
@@ -972,26 +827,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # @mention'ı mesajdan çıkar
         if BOT_USERNAME:
             message_text = message_text.replace(f"@{BOT_USERNAME}", "").strip()
-            message_text = message_text.replace(f"@{BOT_USERNAME.lower()}", "").strip()
-    
-    # Boş mesaj veya "?" kontrolü - komut listesi göster
-    clean_text = message_text.strip()
-    if clean_text == "" or clean_text == "?":
-        await update.message.reply_text(
-            COMMANDS_HELP,
-            parse_mode="Markdown",
-            reply_to_message_id=update.message.message_id
-        )
-        return
     
     # IDLE durumunda
     if session.state == "IDLE":
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             await update.message.reply_text(
-                "❌ Aktif münazara yok. /munazara ile başlatın.\n\n"
-                "_Komut listesi için boş mesaj veya `?` gönderin._",
-                reply_to_message_id=update.message.message_id,
-                parse_mode="Markdown"
+                "❌ Aktif münazara yok. /munazara ile başlatın.",
+                reply_to_message_id=update.message.message_id
             )
         return
     
@@ -1050,18 +892,13 @@ async def handle_setup(update: Update, context: ContextTypes.DEFAULT_TYPE, sessi
         # Setup tamamlandı - araştırma yap
         await update.message.reply_text("⏳ Ayarlar kaydedildi. Araştırma yapılıyor...")
         
-        # Web araştırması ve konu başlıkları
-        research_notes, topics = await do_research(session)
-        session.research_notes = research_notes
-        session.attack_topics = topics
+        # Web araştırması
+        session.research_notes = await do_research(session)
         
         # Tartışma moduna geç
         session.state = "DISCUSSING"
         
         bot_mention = f"@{BOT_USERNAME}" if BOT_USERNAME else "botu etiketleyerek"
-        
-        # Konu listesini formatla
-        topics_text = format_topics_list(topics)
         
         ready_msg = f"""✅ **Münazara Hazır!**
 
@@ -1074,13 +911,9 @@ Sertlik: {session.severity}
 Stil: {session.style}
 Konu: {session.topic}
 
-📌 **Saldırı Konuları:**
-{topics_text}
-
 ⚠️ **KURAL:** Bir çürütmemi geçmem için "haklısın" demeniz gerekir.
 
-💡 Konu seçmek için: `{bot_mention} konu 2`
-💡 Veya direkt iddianızı söyleyin: `{bot_mention} [iddianız]`"""
+🎯 Şimdi ilk iddianızı söyleyin! ({bot_mention} ile başlayın)"""
         
         await update.message.reply_text(ready_msg, parse_mode="Markdown")
 
@@ -1090,29 +923,6 @@ async def handle_discussion(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     # Özel komutları kontrol et
     text_lower = message_text.lower().strip()
     
-    # "konu X" tespiti
-    konu_match = re.match(r'konu\s*(\d+)', text_lower)
-    if konu_match:
-        konu_no = int(konu_match.group(1))
-        if 1 <= konu_no <= len(session.attack_topics):
-            selected_topic = session.attack_topics[konu_no - 1]
-            
-            if selected_topic in session.completed_topics:
-                await update.message.reply_text(
-                    f"⚠️ Bu konu zaten işlendi: {selected_topic}\n\nBaşka konu seçin.",
-                    reply_to_message_id=update.message.message_id
-                )
-                return
-            
-            # Bu konuyla başla
-            message_text = f"'{selected_topic}' konusunda bana saldır."
-        else:
-            await update.message.reply_text(
-                f"❌ Geçersiz konu numarası. 1-{len(session.attack_topics)} arası seçin.",
-                reply_to_message_id=update.message.message_id
-            )
-            return
-    
     # "haklısın" tespiti
     if any(phrase in text_lower for phrase in ["haklısın", "haklısin", "pes", "1️⃣"]):
         # Nokta kazanıldı
@@ -1121,33 +931,10 @@ async def handle_discussion(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             session.points_won.append(last_point)
         
         session.turn_count = 0
-        
-        # Kalan konuları kontrol et
-        remaining = [t for t in session.attack_topics if t not in session.completed_topics]
-        
-        if remaining:
-            topics_text = format_topics_list(session.attack_topics, session.completed_topics)
-            await update.message.reply_text(
-                f"✅ Bu noktayı geçiyorum.\n\n"
-                f"📌 **Kalan Konular:**\n{topics_text}\n\n"
-                f"Konu seçin veya yeni iddia söyleyin.",
-                reply_to_message_id=update.message.message_id,
-                parse_mode="Markdown"
-            )
-        else:
-            # Tüm konular bitti - yeni liste oluştur
-            await update.message.reply_text("⏳ Tüm konular işlendi. Yeni konular oluşturuluyor...")
-            
-            new_topics = await generate_new_topics(session)
-            session.attack_topics = new_topics
-            # completed_topics'i sıfırlama - eski konuları hatırla
-            
-            topics_text = format_topics_list(new_topics)
-            await update.message.reply_text(
-                f"🆕 **Yeni Saldırı Konuları:**\n{topics_text}\n\n"
-                f"Konu seçin veya yeni iddia söyleyin.",
-                parse_mode="Markdown"
-            )
+        await update.message.reply_text(
+            "✅ Bu noktayı geçiyorum. Başka açıdan saldırıyorum.\n\nYeni iddianızı söyleyin.",
+            reply_to_message_id=update.message.message_id
+        )
         return
     
     # "geç" tespiti
@@ -1157,30 +944,10 @@ async def handle_discussion(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             session.points_pending.append(last_point)
         
         session.turn_count = 0
-        
-        remaining = [t for t in session.attack_topics if t not in session.completed_topics]
-        
-        if remaining:
-            topics_text = format_topics_list(session.attack_topics, session.completed_topics)
-            await update.message.reply_text(
-                f"⏸️ Askıya aldım, not ettim.\n\n"
-                f"📌 **Kalan Konular:**\n{topics_text}\n\n"
-                f"Konu seçin veya yeni iddia söyleyin.",
-                reply_to_message_id=update.message.message_id,
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text("⏳ Tüm konular işlendi. Yeni konular oluşturuluyor...")
-            
-            new_topics = await generate_new_topics(session)
-            session.attack_topics = new_topics
-            
-            topics_text = format_topics_list(new_topics)
-            await update.message.reply_text(
-                f"🆕 **Yeni Saldırı Konuları:**\n{topics_text}\n\n"
-                f"Konu seçin veya yeni iddia söyleyin.",
-                parse_mode="Markdown"
-            )
+        await update.message.reply_text(
+            "⏸️ Askıya aldım, çözülmedi, not ettim. Başka noktaya geçiyorum.\n\nYeni iddianızı söyleyin.",
+            reply_to_message_id=update.message.message_id
+        )
         return
     
     # "2️⃣ cevap ver" tespiti
@@ -1201,12 +968,6 @@ async def handle_discussion(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     # Tur sayacı
     session.turn_count += 1
-    
-    # Konu işlendi olarak işaretle (eğer konu seçildiyse)
-    for topic in session.attack_topics:
-        if topic.lower() in message_text.lower() and topic not in session.completed_topics:
-            session.completed_topics.append(topic)
-            break
     
     # 5 tur kontrolü
     if session.turn_count >= 5:
