@@ -370,7 +370,7 @@ async def ask_openrouter(system_prompt: str, user_message: str, chat_history: li
         response = openrouter_client.chat.completions.create(
             model="meta-llama/llama-3.3-70b-instruct:free",
             messages=messages,
-            max_tokens=1024,
+            max_tokens=2048,
             temperature=0.7
         )
         
