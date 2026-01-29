@@ -5,7 +5,6 @@ Münazara GPT v2 - Grup Münazara Botu
 - Fallback: Gemini → OpenRouter DeepSeek
 - Grup desteği (@mention ile çalışır)
 - Instructions v6.1 akışı
-- Nöbet Devri Bildirimi (JobQueue ile günlük 08:00)
 """
 import threading
 import time
@@ -13,9 +12,8 @@ import urllib.request
 import os
 import logging
 import asyncio
-import re
-from datetime import datetime, timedelta, time as dt_time
-from typing import Optional, Tuple, Dict, Any, List
+from datetime import datetime, timedelta
+from typing import Optional, Tuple, Dict, Any
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
@@ -50,13 +48,6 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Bot username (runtime'da alınacak)
 BOT_USERNAME = None
-
-# ============================================
-# NÖBETÇİ LİSTESİ (Hafıza)
-# ============================================
-
-# {chat_id: {"list": [(tarih, isim), ...], "message_id": pinned_msg_id}}
-nobet_data: Dict[int, Dict[str, Any]] = {}
 
 # ============================================
 # MÜNAZARA OTURUMU
@@ -451,228 +442,6 @@ Türkçe yaz, kısa tut."""
     return "Araştırma yapılamadı, genel bilgilerle devam ediliyor."
 
 # ============================================
-# NÖBETÇİ LİSTESİ FONKSİYONLARI
-# ============================================
-
-def parse_nobet_listesi(text: str) -> List[Tuple[datetime, str]]:
-    """
-    Nöbet listesini parse et
-    Desteklenen formatlar: DD.MM.YYYY, DD/MM/YYYY, DD/MM.YYYY, DD.MM/YYYY
-    Boşluk ve tab toleranslı
-    """
-    result = []
-    lines = text.strip().split('\n')
-    
-    # /nobetnarkotikdevri satırını atla
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith('/'):
-            continue
-        
-        # Tarih pattern: DD.MM.YYYY veya DD/MM/YYYY (karışık da olabilir)
-        # Boşluk/tab ile ayrılmış isim
-        pattern = r'(\d{1,2})[./](\d{1,2})[./](\d{4})\s+(.+)'
-        match = re.match(pattern, line)
-        
-        if match:
-            day = int(match.group(1))
-            month = int(match.group(2))
-            year = int(match.group(3))
-            name = match.group(4).strip()
-            
-            try:
-                date = datetime(year, month, day)
-                result.append((date, name))
-            except ValueError:
-                logger.warning(f"Geçersiz tarih: {line}")
-                continue
-    
-    return result
-
-def format_date_turkish(date: datetime) -> str:
-    """Tarihi Türkçe formatla"""
-    return date.strftime("%d.%m.%Y")
-
-async def load_nobet_from_pinned(bot: Bot, chat_id: int) -> bool:
-    """Pinned mesajdan nöbet listesini yükle"""
-    try:
-        chat = await bot.get_chat(chat_id)
-        pinned = chat.pinned_message
-        
-        if pinned and pinned.text and pinned.text.startswith('/nobetnarkotikdevri'):
-            liste = parse_nobet_listesi(pinned.text)
-            if liste:
-                nobet_data[chat_id] = {
-                    "list": liste,
-                    "message_id": pinned.message_id
-                }
-                logger.info(f"Nöbet listesi pinned'dan yüklendi: {chat_id}, {len(liste)} kayıt")
-                return True
-    except Exception as e:
-        logger.error(f"Pinned mesaj okuma hatası: {e}")
-    
-    return False
-
-async def nobet_gunluk_kontrol(context: ContextTypes.DEFAULT_TYPE):
-    """Her sabah 08:00'de çalışacak günlük kontrol"""
-    logger.info("Nöbet günlük kontrol başladı...")
-    
-    bugun = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    dun = bugun - timedelta(days=1)
-    
-    for chat_id, data in list(nobet_data.items()):
-        try:
-            liste = data.get("list", [])
-            if not liste:
-                # Pinned'dan yüklemeyi dene
-                loaded = await load_nobet_from_pinned(context.bot, chat_id)
-                if not loaded:
-                    continue
-                liste = nobet_data[chat_id].get("list", [])
-            
-            devreden = None
-            devralan = None
-            
-            for tarih, isim in liste:
-                tarih_normalized = tarih.replace(hour=0, minute=0, second=0, microsecond=0)
-                if tarih_normalized == dun:
-                    devreden = (tarih, isim)
-                elif tarih_normalized == bugun:
-                    devralan = (tarih, isim)
-            
-            # En az biri varsa mesaj at
-            if devreden or devralan:
-                mesaj_parts = ["🔄 **Nöbet Narkotik Devri**\n"]
-                
-                if devreden:
-                    mesaj_parts.append(f"Devreden: {devreden[1]} ({format_date_turkish(devreden[0])} - Dün)")
-                
-                if devralan:
-                    mesaj_parts.append(f"Devralan: {devralan[1]} ({format_date_turkish(devralan[0])} - Bugün)")
-                
-                mesaj = "\n".join(mesaj_parts)
-                
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=mesaj,
-                    parse_mode="Markdown"
-                )
-                logger.info(f"Nöbet devri mesajı gönderildi: {chat_id}")
-        
-        except Exception as e:
-            logger.error(f"Nöbet kontrol hatası ({chat_id}): {e}")
-
-async def nobetnarkotikdevri_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/nobetnarkotikdevri - Nöbet listesi kaydet ve pinle"""
-    chat_id = update.effective_chat.id
-    message_text = update.message.text
-    
-    # Listeyi parse et
-    liste = parse_nobet_listesi(message_text)
-    
-    if not liste:
-        await update.message.reply_text(
-            "❌ Geçerli nöbet listesi bulunamadı.\n\n"
-            "**Format:**\n"
-            "```\n"
-            "/nobetnarkotikdevri\n"
-            "26.01.2026    Fatih\n"
-            "27/01/2026  Recep\n"
-            "28.01.2026       İpek\n"
-            "```\n"
-            "Tarih formatı: GG.AA.YYYY veya GG/AA/YYYY",
-            parse_mode="Markdown"
-        )
-        return
-    
-    # Eski pinli mesajı indir (varsa)
-    try:
-        if chat_id in nobet_data and nobet_data[chat_id].get("message_id"):
-            old_msg_id = nobet_data[chat_id]["message_id"]
-            try:
-                await context.bot.unpin_chat_message(chat_id=chat_id, message_id=old_msg_id)
-                logger.info(f"Eski pin kaldırıldı: {old_msg_id}")
-            except Exception as e:
-                logger.warning(f"Eski pin kaldırılamadı: {e}")
-    except Exception as e:
-        logger.warning(f"Pin kontrolü hatası: {e}")
-    
-    # Yeni listeyi kaydet
-    nobet_data[chat_id] = {
-        "list": liste,
-        "message_id": update.message.message_id
-    }
-    
-    # Mesajı pinle
-    try:
-        await context.bot.pin_chat_message(
-            chat_id=chat_id,
-            message_id=update.message.message_id,
-            disable_notification=True
-        )
-        pin_status = "📌 Mesaj pinlendi."
-    except Exception as e:
-        logger.warning(f"Pin hatası: {e}")
-        pin_status = "⚠️ Mesaj pinlenemedi (bot admin değil olabilir)."
-    
-    # Onay mesajı
-    await update.message.reply_text(
-        f"✅ **Nöbet listesi kaydedildi!**\n\n"
-        f"📋 Toplam {len(liste)} kayıt\n"
-        f"📅 İlk: {format_date_turkish(liste[0][0])} - {liste[0][1]}\n"
-        f"📅 Son: {format_date_turkish(liste[-1][0])} - {liste[-1][1]}\n\n"
-        f"{pin_status}\n\n"
-        f"_Her gün saat 08:00'de nöbet devri bildirimi yapılacak._",
-        parse_mode="Markdown"
-    )
-
-async def nobetdurum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/nobetdurum - Nöbet listesi durumu"""
-    chat_id = update.effective_chat.id
-    
-    # Önce hafızada var mı kontrol et
-    if chat_id not in nobet_data or not nobet_data[chat_id].get("list"):
-        # Pinned'dan yüklemeyi dene
-        loaded = await load_nobet_from_pinned(context.bot, chat_id)
-        if not loaded:
-            await update.message.reply_text(
-                "❌ Kayıtlı nöbet listesi yok.\n"
-                "/nobetnarkotikdevri ile liste ekleyin."
-            )
-            return
-    
-    data = nobet_data[chat_id]
-    liste = data.get("list", [])
-    
-    bugun = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    # Bugünkü ve yarınki nöbetçiyi bul
-    bugunki = None
-    yarinki = None
-    
-    for tarih, isim in liste:
-        tarih_normalized = tarih.replace(hour=0, minute=0, second=0, microsecond=0)
-        if tarih_normalized == bugun:
-            bugunki = (tarih, isim)
-        elif tarih_normalized == bugun + timedelta(days=1):
-            yarinki = (tarih, isim)
-    
-    mesaj = f"📋 **Nöbet Listesi Durumu**\n\n"
-    mesaj += f"Toplam kayıt: {len(liste)}\n"
-    mesaj += f"İlk tarih: {format_date_turkish(liste[0][0])}\n"
-    mesaj += f"Son tarih: {format_date_turkish(liste[-1][0])}\n\n"
-    
-    if bugunki:
-        mesaj += f"📍 **Bugün:** {bugunki[1]}\n"
-    else:
-        mesaj += f"📍 **Bugün:** Liste dışı\n"
-    
-    if yarinki:
-        mesaj += f"📍 **Yarın:** {yarinki[1]}\n"
-    
-    await update.message.reply_text(mesaj, parse_mode="Markdown")
-
-# ============================================
 # TELEGRAM HANDLERS
 # ============================================
 
@@ -690,10 +459,6 @@ Bu bot grupla münazara yapar. Tüm grup üyeleri = bir taraf, bot = karşı tar
 /bitir - Münazarayı bitir ve özet al
 /durum - Mevcut oturum durumu
 /sifirla - Oturumu sıfırla
-
-**Nöbet Devri:**
-/nobetnarkotikdevri - Nöbet listesi kaydet
-/nobetdurum - Nöbet durumu
 
 **Kullanım:**
 Münazara başladıktan sonra @{BOT_USERNAME} yazarak botu etiketleyin.
@@ -993,34 +758,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Hata: {context.error}")
 
 # ============================================
-# POST INIT - JobQueue ve Pinned Yükleme
-# ============================================
-
-async def post_init(application: Application):
-    """Bot başladığında çalışır"""
-    global BOT_USERNAME
-    
-    # Bot username'i al
-    bot_info = await application.bot.get_me()
-    BOT_USERNAME = bot_info.username
-    logger.info(f"Bot username: @{BOT_USERNAME}")
-    
-    # JobQueue'yu ayarla - Her gün saat 08:00 (Türkiye saati UTC+3)
-    job_queue = application.job_queue
-    if job_queue:
-        # Türkiye saati için UTC+3 = 08:00 TR -> 05:00 UTC
-        target_time = dt_time(hour=5, minute=0, second=0)  # UTC
-        
-        job_queue.run_daily(
-            nobet_gunluk_kontrol,
-            time=target_time,
-            name="nobet_gunluk"
-        )
-        logger.info(f"Nöbet günlük kontrol zamanlandı: {target_time} UTC (08:00 TR)")
-    else:
-        logger.warning("JobQueue kullanılamıyor! pip install 'python-telegram-bot[job-queue]' gerekli.")
-
-# ============================================
 # ANA FONKSİYON
 # ============================================
 
@@ -1039,7 +776,13 @@ def main():
     # Uygulama oluştur
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Post init ayarla
+    # Bot username'i al
+    async def post_init(application: Application):
+        global BOT_USERNAME
+        bot_info = await application.bot.get_me()
+        BOT_USERNAME = bot_info.username
+        logger.info(f"Bot username: @{BOT_USERNAME}")
+    
     app.post_init = post_init
     
     # Handler'ları ekle
@@ -1048,11 +791,6 @@ def main():
     app.add_handler(CommandHandler("bitir", bitir_command))
     app.add_handler(CommandHandler("durum", durum_command))
     app.add_handler(CommandHandler("sifirla", sifirla_command))
-    
-    # Nöbet komutları
-    app.add_handler(CommandHandler("nobetnarkotikdevri", nobetnarkotikdevri_command))
-    app.add_handler(CommandHandler("nobetdurum", nobetdurum_command))
-    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     app.add_error_handler(error_handler)

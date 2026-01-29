@@ -152,55 +152,6 @@ Veya manuel:
 
 ---
 
-## 🔄 NÖBETÇİ DEVRİ ÖZELLİĞİ
-
-### Kullanım
-
-**1. Nöbet listesi eklemek için:**
-Gruba şu formatla mesaj gönderin:
-
-```
-/nobetnarkotikdevri
-26.01.2026    Fatih
-27/01/2026  Recep
-28.01.2026       İpek
-29/01.2026 Arda
-30.01.2026    Erkan
-```
-
-- Tarih formatı: `GG.AA.YYYY` veya `GG/AA/YYYY` (karışık olabilir)
-- Boşluk/tab toleranslı
-- Bot mesajı otomatik pinler
-
-**2. Otomatik bildirim:**
-Her gün **saat 08:00**'de (Türkiye saati) bot şu mesajı gönderir:
-
-```
-🔄 Nöbet Narkotik Devri
-Devreden: Arda (28.01.2026 - Dün)
-Devralan: Erkan (29.01.2026 - Bugün)
-```
-
-**3. Durum kontrolü:**
-```
-/nobetdurum
-```
-
-**4. Yeni liste eklemek:**
-- Yeni `/nobetnarkotikdevri` mesajı gönderin
-- Eski pin otomatik kalkar
-- Yeni liste aktif olur
-
-### Restart Durumu
-- Bot restart olursa, pinned mesajdan listeyi otomatik yükler
-- Pinned mesaj yoksa kullanıcıdan yeni liste ister
-
-### Gereksinimler
-- Bot'un grupta **admin** olması gerekir (pin için)
-- Admin değilse liste yine çalışır ama pin yapılamaz
-
----
-
 ## 🎉 TAMAMLANDI!
 
 Botun artık 7/24 çalışıyor. Bilgisayarını kapatsan bile bot aktif kalacak!

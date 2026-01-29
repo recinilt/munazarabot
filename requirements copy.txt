@@ -1,5 +1,5 @@
-# Telegram (JobQueue desteği dahil)
-python-telegram-bot[job-queue]>=21.0
+# Telegram
+python-telegram-bot>=21.0
 
 # Google GenAI (YENİ SDK - google-generativeai DEĞİL!)
 google-genai>=1.0.0
